@@ -1,0 +1,3 @@
+field,dataset,description
+returns,PRICE,Daily returns
+volume,PRICE,Trading volume
