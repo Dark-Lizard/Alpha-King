@@ -248,17 +248,19 @@ if st.sidebar.button("🔌 Sign Out / Reset Session", use_container_width=True):
 
 st.title("👑 Alpha King Workbench")
 
-# REGION TO UNIVERSE MAPPING
-REGION_UNIVERSES = {
-    "USA": ["TOP3000", "TOP2000", "TOP1000", "TOP500", "TOP200", "ALL"],
-    "EUR": ["TOP2500", "TOP1200", "TOP600", "ALL"],
-    "ASI": ["TOP3000", "TOP1000", "TOP500", "ALL"],
-    "GLB": ["TOP3000", "TOP1800", "ALL"],
-    "GBR": ["TOP1000", "TOP500", "ALL"],
-    "KOR": ["TOP1000", "TOP500", "ALL"],
-    "TWN": ["TOP1000", "TOP500", "ALL"],
-    "AMR": ["TOP3000", "TOP1000", "ALL"],
-    "IND": ["TOP1000", "TOP500", "ALL"]
+# REGION CONFIGURATIONS (Delays and Universes)
+REGION_CONFIG = {
+    "GLB": {"delays": [1], "universes": ["TOP3000", "MINVOL1M", "MINVOL10M", "TOPDIV3000"]},
+    "USA": {"delays": [0, 1], "universes": ["TOP3000", "TOP2000", "TOP1000", "TOP500", "TOP200", "TOPSP500"]},
+    "EUR": {"delays": [0, 1], "universes": ["TOP2500", "TOP1200", "TOP800", "TOP400", "TOPCS1600"]},
+    "ASI": {"delays": [1], "universes": ["MINVOL1M", "MINVOL10M", "TOP500"]},
+    "KOR": {"delays": [1], "universes": ["TOP600"]},
+    "IND": {"delays": [1], "universes": ["TOP500"]},
+    "AMR": {"delays": [0, 1], "universes": ["TOP600"]},
+    "TWN": {"delays": [1], "universes": ["TOP500", "TOP100"]},
+    "DEU": {"delays": [0, 1], "universes": ["TOP500"]},
+    "GBR": {"delays": [0, 1], "universes": ["TOP700"]},
+    "CHN": {"delays": [0, 1], "universes": ["TOP2000U"]}
 }
 
 # --- 1. WORLDQUANT SYNC & DATA ---
@@ -328,26 +330,33 @@ elif page == "Alpha Simulation Lab":
 
     expr = st.text_area("Alpha Factor Expression", value="rank(ts_rank(close, 20))", height=100)
     
-    c1, c2, c3 = st.columns(3)
-    region = c1.selectbox("Region", list(REGION_UNIVERSES.keys()))
-    universe = c2.selectbox("Universe", REGION_UNIVERSES[region])
-    decay = c3.number_input("Decay", value=4, min_value=0, max_value=30)
+    c1, c2, c3, c4 = st.columns(4)
+    region = c1.selectbox("Region", list(REGION_CONFIG.keys()))
+    
+    # Dynamic Delay options based on Region config
+    allowed_delays = REGION_CONFIG[region]["delays"]
+    delay_options = [f"D{d}" for d in allowed_delays]
+    delay_selection = c2.selectbox("Delay", delay_options)
+    delay_val = int(delay_selection.replace("D", ""))
+
+    universe = c3.selectbox("Universe", REGION_CONFIG[region]["universes"])
+    decay = c4.number_input("Decay", value=4, min_value=0, max_value=30)
 
     # Advanced Simulation Settings Drawer
     with st.expander("⚙️ Advanced Simulation Settings"):
         sc1, sc2, sc3 = st.columns(3)
         language = sc1.selectbox("Language", ["FASTEXPR", "PYTHON"])
-        delay = sc2.selectbox("Delay", [1, 0])
-        instrument_type = sc3.selectbox("Instrument Type", ["EQUITY"])
+        instrument_type = sc2.selectbox("Instrument Type", ["EQUITY"])
+        unit_handling = sc3.selectbox("Unit Handling", ["VERIFY", "OFF"])
 
-        sc4, sc5, sc6 = sc1.columns(3), sc2.columns(3), sc3.columns(3)
-        unit_handling = sc1.selectbox("Unit Handling", ["VERIFY", "OFF"])
-        truncation = sc2.number_input("Truncation", value=0.08, step=0.01)
-        nan_handling = sc3.selectbox("Nan Handling", ["OFF", "ON"])
+        sc4, sc5, sc6 = st.columns(3)
+        truncation = sc4.number_input("Truncation", value=0.08, step=0.01)
+        nan_handling = sc5.selectbox("Nan Handling", ["OFF", "ON"])
+        pasteurization = sc6.selectbox("Pasteurization", ["ON", "OFF"])
 
-        pasteurization = sc1.selectbox("Pasteurization", ["ON", "OFF"])
-        max_positions = sc2.selectbox("Maximum Positions", ["OFF", "ON"])
-        test_period_years = sc3.slider("Test Period (Years)", 1, 10, 6)
+        sc7, sc8 = st.columns(2)
+        max_positions = sc7.selectbox("Maximum Positions", ["OFF", "ON"])
+        test_period_years = sc8.slider("Test Period (Years)", 1, 10, 6)
 
     # Simulation Trigger
     if st.button("▶ Run Simulation", type="primary", use_container_width=True):
@@ -361,7 +370,7 @@ elif page == "Alpha Simulation Lab":
                     "instrumentType": instrument_type,
                     "region": region,
                     "universe": universe,
-                    "delay": delay,
+                    "delay": delay_val,
                     "decay": decay,
                     "neutralization": "SUBINDUSTRY",
                     "truncation": truncation,
