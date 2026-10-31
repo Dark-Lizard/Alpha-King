@@ -1,59 +1,275 @@
 import streamlit as st
 import pandas as pd
-from brain_api import BrainAPIHandler
+import sqlite3
+import json
+import os
+import random
+import requests
+from pathlib import Path
+from datetime import datetime, timedelta, date
+from io import BytesIO
+from local_backtest import run_backtest, BacktestError
 
-st.set_page_config(page_title="Alpha King - Quant Research Workspace", page_icon="👑", layout="wide")
+DB = Path(__file__).with_name("alpha_lab.sqlite3")
+BRAIN_API = "https://api.worldquantbrain.com"
+DEFAULT_PROMPT = "An alpha predicts future prices using six years of history. Use less-exploited fields, at most 3 operators and at most 2 data fields. Explain economic rationale and overfitting risks."
 
-# Sidebar Credentials Configuration
-st.sidebar.title("👑 Alpha King Control")
-st.sidebar.markdown("---")
+st.set_page_config(page_title="Alpha King", page_icon="👑", layout="wide", initial_sidebar_state="expanded")
 
-st.sidebar.subheader("🔑 API Integrations")
-gemini_api_key = st.sidebar.text_input("Gemini API Key", type="password", help="Enter your Google Gemini API key.")
-wq_email = st.sidebar.text_input("WorldQuant Email", help="Your WorldQuant Brain account email.")
-wq_password = st.sidebar.text_input("WorldQuant Password", type="password", help="Your WorldQuant Brain account password.")
+st.markdown("""
+<style>
+.stApp{background:radial-gradient(ellipse at 80% 0%,#14243b 0%,#080d18 52%)}
+[data-testid="stSidebar"]{background:linear-gradient(180deg,#111827,#080d18);border-right:1px solid #26364d}
+[data-testid="stMetric"]{background:linear-gradient(145deg,#14243a,#0e1726);border:1px solid #263d59;padding:15px;border-radius:14px}
+div[data-testid="stForm"],div[data-testid="stExpander"]{border:1px solid #263d59;border-radius:14px}
+.stButton>button,.stDownloadButton>button{border-radius:10px;border:1px solid #315273;font-weight:650}
+.stButton>button[kind="primary"],.stFormSubmitButton>button{background:linear-gradient(90deg,#0284c7,#2563eb);border:0}
+.ak-hero{padding:22px 26px;border-radius:18px;background:linear-gradient(115deg,#12304b,#172554 65%,#111827);border:1px solid #315273;margin-bottom:18px}
+.ak-muted{color:#9fb3c8;font-size:.9rem}
+</style>""", unsafe_allow_html=True)
 
-# Initialize API Handler
-brain_handler = BrainAPIHandler(email=wq_email, password=wq_password, gemini_key=gemini_api_key)
+try:
+    from streamlit_autorefresh import st_autorefresh
+    st_autorefresh(interval=1000, key="clock")
+except:
+    pass
 
-# Main Application Layout
-st.title("👑 Alpha King: Quant Research Workspace")
-st.markdown("Use the sidebar to configure your credentials, sync live platform data, and analyze quantitative factors.")
+def db():
+    c = sqlite3.connect(DB, check_same_thread=False)
+    c.row_factory = sqlite3.Row
+    return c
 
-tab1, tab2 = st.tabs(["📊 Data Explorer & Sync", "✨ Gemini AI Lab"])
+with db() as c:
+    c.executescript("""
+    CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY,v TEXT);
+    CREATE TABLE IF NOT EXISTS fields(field TEXT,dataset TEXT,description TEXT);
+    CREATE TABLE IF NOT EXISTS templates(id INTEGER PRIMARY KEY,name TEXT UNIQUE,expr TEXT,description TEXT);
+    CREATE TABLE IF NOT EXISTS alphas(id INTEGER PRIMARY KEY,expr TEXT,fields TEXT,rationale TEXT,status TEXT,sharpe REAL,fitness REAL,turnover REAL,correlation REAL,created TEXT);
+    CREATE TABLE IF NOT EXISTS tasks(id INTEGER PRIMARY KEY,name TEXT,progress INTEGER,status TEXT);
+    CREATE TABLE IF NOT EXISTS comps(id INTEGER PRIMARY KEY,name TEXT,details TEXT,status TEXT);
+    CREATE TABLE IF NOT EXISTS usage(day TEXT PRIMARY KEY,n INTEGER);
+    CREATE TABLE IF NOT EXISTS pnl(alpha TEXT,date TEXT,pnl REAL);
+    """)
+    c.execute("INSERT OR IGNORE INTO settings VALUES('prompt',?)", (DEFAULT_PROMPT,))
 
-with tab1:
-    st.header("Real-Time Data Sync")
-    st.write("Click the button below to authenticate and pull live data from WorldQuant Brain.")
+def read(q, args=()):
+    with db() as c:
+        return pd.read_sql_query(q, c, params=args)
 
-    if st.button("🚀 Sync Real-Time Data from Brain", type="primary"):
-        if not wq_email or not wq_password:
-            st.warning("Please enter your WorldQuant Brain credentials in the sidebar first.")
+def setting(k, default=""):
+    with db() as c:
+        r = c.execute("SELECT v FROM settings WHERE k=?", (k,)).fetchone()
+    return r[0] if r else default
+
+def save(k, v):
+    with db() as c:
+        c.execute("INSERT INTO settings VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k, str(v)))
+
+def remaining():
+    try:
+        n = max(0, int((datetime.fromisoformat(setting("until")) - datetime.now()).total_seconds()))
+        return f"{n//3600:02}:{n//60%60:02}:{n%60:02}"
+    except:
+        return "Inactive"
+
+# --- Navigation Setup ---
+pages = ["Simulation Lab", "Dashboard", "Data Explorer", "Tasks", "Portfolio", "Competitions", "Template Home", "AI Alpha Lab", "BRAIN Access"]
+icons = {"Dashboard": "🏠", "Data Explorer": "🧭", "Simulation Lab": "⚗️", "Tasks": "📋", "Portfolio": "📈", "Competitions": "🏆", "Template Home": "🧩", "AI Alpha Lab": "✨", "BRAIN Access": "🌐"}
+
+if "current_page" not in st.session_state:
+    st.session_state["current_page"] = "Simulation Lab"
+
+st.sidebar.markdown("# 👑 Alpha King")
+st.sidebar.caption("Quant research workspace")
+
+selected_page = st.sidebar.radio(
+    "WORKSPACE", 
+    [f"{icons[p]}  {p}" for p in pages], 
+    index=pages.index(st.session_state["current_page"])
+)
+page = selected_page.split("  ", 1)[1]
+st.session_state["current_page"] = page
+
+st.sidebar.divider()
+
+active = remaining() != "Inactive"
+st.sidebar.markdown("**BRAIN Session Status**")
+st.sidebar.markdown(f"<span style='color:{'#22c55e' if active else '#f59e0b'}'>● {'ACTIVE' if active else 'SIGNED OUT'}</span>", unsafe_allow_html=True)
+st.sidebar.metric("Session time remaining", remaining())
+
+if st.sidebar.button("↪ Sign out of Alpha King", use_container_width=True):
+    save("until", "")
+    save("login_mode", "")
+    st.session_state.pop("persona_url", None)
+    st.rerun()
+
+st.title("👑 Alpha King")
+
+# --- PAGES ---
+
+if page == "Simulation Lab":
+    st.subheader("⚗️ Local Alpha Simulation Lab")
+    st.info("Runs reproducible cross-sectional backtests locally on uploaded market data.")
+    up = st.file_uploader("Upload CSV: date, symbol, close, plus optional numeric factor columns", type="csv", key="local_market_data")
+    if up:
+        try:
+            market = pd.read_csv(up)
+            market.columns = [str(c).strip().lower() for c in market.columns]
+            if not {"date", "symbol", "close"}.issubset(market.columns):
+                st.error("CSV must contain date, symbol and close columns.")
+            else:
+                market["date"] = pd.to_datetime(market["date"], errors="coerce")
+                market["close"] = pd.to_numeric(market["close"], errors="coerce")
+                market = market.dropna(subset=["date", "symbol", "close"]).sort_values(["symbol", "date"])
+                excluded = {"date", "symbol", "close", "open", "high", "low", "volume"}
+                factors = [c for c in market.columns if c not in excluded and pd.api.types.is_numeric_dtype(market[c])]
+                st.success(f"Loaded {len(market):,} rows · {market.symbol.nunique():,} instruments · {market.date.nunique():,} dates")
+                st.dataframe(market.head(8), use_container_width=True, hide_index=True)
+                
+                models = ["Price momentum", "Price mean reversion"] + [f"Cross-sectional rank: {x}" for x in factors] + [f"Factor momentum: {x}" for x in factors]
+                a, b = st.columns(2)
+                strategy = a.selectbox("Signal model", models)
+                lookback = a.select_slider("Lookback (trading days)", [5, 10, 20, 40, 60, 120, 252], value=20)
+                quantile = b.slider("Long / short quantile", 0.1, 0.4, 0.2, 0.05)
+                fees = b.number_input("One-way transaction cost (bps)", 0.0, 100.0, 5.0, 0.5)
+                split = st.slider("In-sample portion", 0.5, 0.9, 0.7, 0.05)
+                annual = st.selectbox("Trading days per year", [252, 250, 365])
+                
+                if st.button("▶ Run local simulation", type="primary", use_container_width=True):
+                    try:
+                        res = run_backtest(market, strategy, lookback, quantile, fees, split, annual)
+                        st.session_state["local_sim_result"] = res
+                        with db() as c:
+                            c.execute("INSERT INTO usage VALUES(?,1) ON CONFLICT(day) DO UPDATE SET n=n+1", (date.today().isoformat(),))
+                            m = res["metrics"]
+                            c.execute("INSERT INTO alphas(expr,fields,rationale,status,sharpe,fitness,turnover,created) VALUES(?,?,?,'Local simulation',?,?,?,?)",
+                                      (res["expression"], res["factor"], "Local backtest on uploaded data.", m["Sharpe"], m["Fitness"], m["Turnover"], datetime.now().isoformat()))
+                        st.success("Local backtest completed.")
+                    except BacktestError as e:
+                        st.error(str(e))
+                    except Exception as e:
+                        st.error(f"Simulation failed: {e}")
+        except Exception as e:
+            st.error(f"Could not read dataset: {e}")
+            
+    res = st.session_state.get("local_sim_result")
+    if res:
+        st.divider()
+        st.subheader("📊 Results")
+        m = res["metrics"]
+        cols = st.columns(5)
+        for col, (label, key, fmt) in zip(cols, [("Sharpe", "Sharpe", "{:.2f}"), ("Annual return", "Annual Return", "{:.1%}"), ("Max drawdown", "Max Drawdown", "{:.1%}"), ("Turnover", "Turnover", "{:.1%}"), ("Fitness", "Fitness", "{:.2f}")]):
+            col.metric(label, fmt.format(m[key]))
+        
+        import plotly.express as px
+        fig = px.line(res["equity_curve"], x="date", y="equity", title="Cumulative portfolio growth")
+        fig.update_traces(line=dict(color="black", width=2))
+        fig.update_layout(template="plotly_white", font=dict(color="black"), yaxis_title="Growth of 1.0")
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(pd.DataFrame(res["split_metrics"]), use_container_width=True, hide_index=True)
+        st.download_button("⬇ Export daily returns and positions", res["export_csv"], "alpha_king_local_backtest.csv", "text/csv")
+    else:
+        st.caption("Upload a daily panel with multiple symbols to start simulation.")
+
+elif page == "Dashboard":
+    st.markdown('<div class="ak-hero"><h2>Research smarter. Test rigorously. Build better alphas.</h2><div class="ak-muted">Factor discovery and local backtesting workspace.</div></div>', unsafe_allow_html=True)
+    a = read("SELECT * FROM alphas")
+    t = read("SELECT * FROM tasks")
+    with db() as c:
+        u = c.execute("SELECT n FROM usage WHERE day=?", (date.today().isoformat(),)).fetchone()
+    used = u[0] if u else 0
+    x, y, z, w = st.columns(4)
+    x.metric("Local backtests", used)
+    y.metric("Remaining target", max(0, 5000 - used))
+    z.metric("Alpha candidates", len(a))
+    w.metric("Completed tasks", int((t.status == "Completed").sum()) if len(t) else 0)
+    st.progress(min(used / 5000, 1))
+    st.dataframe(a.tail(10), use_container_width=True, hide_index=True) if len(a) else st.info("No alpha records yet.")
+
+elif page == "BRAIN Access":
+    st.subheader("🌐 WorldQuant BRAIN Authentication")
+    st.markdown('<div class="ak-hero"><h3>Authenticate & Return to Workspace</h3><div class="ak-muted">Log in via API or browser verification link.</div></div>', unsafe_allow_html=True)
+    
+    email = st.text_input("WorldQuant Email")
+    password = st.text_input("WorldQuant Password", type="password")
+    
+    if st.button("🔑 Authenticate with WorldQuant BRAIN", type="primary"):
+        if not email or not password:
+            st.warning("Please provide both email and password.")
         else:
-            with st.spinner("Connecting to WorldQuant Brain platform..."):
-                data, message = brain_handler.sync_realtime_data()
-                if data:
-                    st.success(message)
-                    st.json(data)
-                    st.session_state['synced_data'] = data
+            try:
+                res = requests.post(f"{BRAIN_API}/authentication", auth=(email, password), json={"expiry": 14400}, timeout=15, allow_redirects=False)
+                if res.status_code in (200, 201, 204):
+                    save("until", (datetime.now() + timedelta(hours=4)).isoformat())
+                    save("login_mode", "direct_api")
+                    st.session_state["current_page"] = "Simulation Lab"
+                    st.success("Authentication successful! Redirecting to Simulation Lab...")
+                    st.rerun()
+                elif res.status_code == 401 and "persona" in res.headers.get("WWW-Authenticate", "").lower():
+                    inquiry_url = res.headers.get("Location")
+                    st.session_state["persona_url"] = inquiry_url
+                    st.warning("WorldQuant requested Persona identity verification.")
                 else:
-                    st.error(message)
+                    st.error(f"Authentication failed: {res.status_code} - {res.text}")
+            except Exception as e:
+                st.error(f"Connection error: {e}")
 
-with tab2:
-    st.header("Gemini Quant Analysis")
-    st.write("Ask Gemini to analyze your synced workspace status or offer factor optimizations.")
+    if st.session_state.get("persona_url"):
+        st.divider()
+        st.subheader("⚠️ Identity Verification Required")
+        st.write("Complete verification in the window below, then click confirm to complete login:")
+        st.link_button("↗️ Open Persona Verification Link", st.session_state["persona_url"])
+        
+        if st.button("✓ I completed verification — return to app", use_container_width=True, type="primary"):
+            save("until", (datetime.now() + timedelta(hours=4)).isoformat())
+            save("login_mode", "persona_manual_confirm")
+            st.session_state.pop("persona_url", None)
+            st.session_state["current_page"] = "Simulation Lab"
+            st.success("Verification confirmed! Returning to Simulation Lab...")
+            st.rerun()
 
-    analysis_prompt = st.text_area(
-        "Gemini Prompt", 
-        value="Analyze the current alpha research pipeline status and suggest optimization strategies."
-    )
+elif page == "Data Explorer":
+    st.subheader("Data Explorer")
+    up = st.file_uploader("Import authorized data-field CSV", type="csv")
+    if up and st.button("Import fields"):
+        d = pd.read_csv(up)
+        d.columns = [x.lower() for x in d.columns]
+        f = next((x for x in ["field", "field_id", "name"] if x in d), None)
+        if f:
+            with db() as c:
+                for _, r in d.iterrows():
+                    c.execute("INSERT INTO fields VALUES(?,?,?)", (str(r[f]), str(r.get("dataset", "")), str(r.get("description", ""))))
+            st.success("Imported fields.")
+            st.rerun()
+    f = read("SELECT * FROM fields ORDER BY dataset,field")
+    if len(f):
+        ds = st.selectbox("Dataset", ["All"] + sorted(f.dataset.fillna("").unique().tolist()))
+        v = f if ds == "All" else f[f.dataset == ds]
+        st.dataframe(v, use_container_width=True, hide_index=True)
 
-    if st.button("✨ Run Gemini Analysis"):
-        if not gemini_api_key:
-            st.warning("Please enter your Gemini API key in the sidebar.")
-        else:
-            with st.spinner("Consulting Gemini..."):
-                context = st.session_state.get('synced_data', {"info": "No live sync data loaded yet."})
-                result = brain_handler.ask_gemini_analysis(analysis_prompt, context)
-                st.subheader("Gemini Insights:")
-                st.markdown(result)
+elif page == "AI Alpha Lab":
+    st.subheader("AI Alpha Lab")
+    prompt = st.text_area("Primary Prompt", setting("prompt"), height=120)
+    if st.button("Save Prompt"):
+        save("prompt", prompt)
+        st.success("Saved.")
+
+elif page == "Portfolio":
+    st.subheader("Portfolio")
+    a = read("SELECT * FROM alphas")
+    st.dataframe(a, use_container_width=True, hide_index=True) if len(a) else st.info("No recorded alphas.")
+
+elif page == "Tasks":
+    st.subheader("Tasks")
+    for _, r in read("SELECT * FROM tasks ORDER BY id DESC").iterrows():
+        st.write(f"{r['name']} — {r.progress}%")
+
+elif page == "Competitions":
+    st.subheader("Competitions")
+    for _, r in read("SELECT * FROM comps").iterrows():
+        st.write(r["name"], r.status)
+
+elif page == "Template Home":
+    st.subheader("Template Home")
+    t = read("SELECT * FROM templates ORDER BY id")
+    st.dataframe(t, use_container_width=True, hide_index=True) if len(t) else st.info("No templates stored.")
