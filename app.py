@@ -19,7 +19,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- DARK OBSIDIAN & GOLD THEME & HIGH-CONTRAST INPUT STYLING ---
+# --- DARK OBSIDIAN & GOLD THEME WITH SOLID BLACK INPUTS ---
 st.markdown("""
 <style>
 .stApp {
@@ -76,12 +76,12 @@ h1, h2, h3, h4, h5, h6 {
     font-size: 0.95rem;
 }
 
-/* High-contrast visible text inputs and textareas */
+/* Solid Black Inputs with Gold Borders and White Text */
 div[data-baseweb="input"], 
 div[data-baseweb="select"] > div, 
 div[data-baseweb="textarea"] {
-    background-color: #111827 !important;
-    border: 1px solid #475569 !important;
+    background-color: #000000 !important;
+    border: 1px solid #d97706 !important;
     border-radius: 8px !important;
 }
 
@@ -91,7 +91,7 @@ textarea,
 .stTextInput input, 
 .stTextArea textarea {
     color: #ffffff !important;
-    background-color: transparent !important;
+    background-color: #000000 !important;
     caret-color: #fbbf24 !important;
 }
 
