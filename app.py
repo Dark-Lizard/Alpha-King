@@ -149,9 +149,13 @@ def save(k, v):
     with db() as c:
         c.execute("INSERT INTO settings VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k, str(v)))
 
-# Session State
+# Session State Initialization
 if "current_page" not in st.session_state:
     st.session_state["current_page"] = "WorldQuant Sync & Data"
+if "wq_authenticated" not in st.session_state:
+    st.session_state["wq_authenticated"] = False
+if "wq_session" not in st.session_state:
+    st.session_state["wq_session"] = None
 
 # Sidebar Navigation
 pages = [
@@ -233,6 +237,10 @@ if page == "WorldQuant Sync & Data":
             st.info("Complete Persona Verification below:")
             st.link_button("↗️ Open Persona Portal", st.session_state["persona_url"], type="primary", use_container_width=True)
             if st.button("✓ Confirm Verification Done", use_container_width=True):
+                # Create session object on manual confirmation
+                s = requests.Session()
+                s.headers.update({"Accept": "application/json;version=2.0"})
+                st.session_state["wq_session"] = s
                 st.session_state["wq_authenticated"] = True
                 st.session_state.pop("persona_url", None)
                 st.success("Session activated.")
@@ -242,10 +250,10 @@ if page == "WorldQuant Sync & Data":
     st.subheader("🔄 Live Data Field Synchronizer")
     
     if st.button("⚡ Sync Live Data Fields from WorldQuant", type="primary"):
-        if not st.session_state.get("wq_authenticated"):
+        s = st.session_state.get("wq_session")
+        if not st.session_state.get("wq_authenticated") or s is None:
             st.error("Please connect your WorldQuant BRAIN account above first.")
         else:
-            s = st.session_state["wq_session"]
             with st.spinner("Fetching live data fields from WorldQuant API..."):
                 try:
                     res = s.get(f"{BRAIN_API}/data-fields?limit=50", headers={"Accept": "application/json;version=2.0"}, timeout=12)
@@ -280,10 +288,10 @@ elif page == "Alpha Simulation Lab":
     decay = c3.number_input("Decay", value=4)
 
     if st.button("▶ Submit Simulation to WorldQuant BRAIN", type="primary", use_container_width=True):
-        if not st.session_state.get("wq_authenticated"):
+        s = st.session_state.get("wq_session")
+        if not st.session_state.get("wq_authenticated") or s is None:
             st.error("You must authenticate with WorldQuant under 'WorldQuant Sync & Data' first.")
         else:
-            s = st.session_state["wq_session"]
             payload = {
                 "type": "REGULAR",
                 "settings": {
