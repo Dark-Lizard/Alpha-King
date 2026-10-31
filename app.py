@@ -230,19 +230,102 @@ elif page == "Simulation Lab":
             st.error(f"Could not read dataset: {e}")
 
 elif page == "Dashboard":
-    st.markdown('<div class="ak-hero"><h2>Research smarter. Test rigorously. Build better alphas.</h2><div class="ak-muted">Factor discovery and local backtesting workspace.</div></div>', unsafe_allow_html=True)
-    a = read("SELECT * FROM alphas")
-    t = read("SELECT * FROM tasks")
-    with db() as c:
-        u = c.execute("SELECT n FROM usage WHERE day=?", (date.today().isoformat(),)).fetchone()
-    used = u[0] if u else 0
-    x, y, z, w = st.columns(4)
-    x.metric("Local backtests", used)
-    y.metric("Remaining target", max(0, 5000 - used))
-    z.metric("Alpha candidates", len(a))
-    w.metric("Completed tasks", int((t.status == "Completed").sum()) if len(t) else 0)
-    st.progress(min(used / 5000, 1))
-    st.dataframe(a.tail(10), use_container_width=True, hide_index=True) if len(a) else st.info("No alpha records yet.")
+    st.markdown("""
+<style>
+/* Main app background - Clean & bright main background */
+.stApp {
+    background-color: #0f172a;
+    color: #f8fafc;
+}
+
+/* Sidebar styling - Rich navy with clear borders */
+[data-testid="stSidebar"] {
+    background-color: #1e293b;
+    border-right: 1px solid #334155;
+}
+
+/* Sidebar text and subheaders visibility */
+[data-testid="stSidebar"] * {
+    color: #f1f5f9 !important;
+}
+
+/* Main title & Headers - Bright white */
+h1, h2, h3, h4, h5, h6, .stMarkdown label, p {
+    color: #f8fafc !important;
+}
+
+/* Metrics - Sharp contrast cards */
+[data-testid="stMetric"] {
+    background: #1e293b;
+    border: 1px solid #334155;
+    padding: 16px;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+}
+
+[data-testid="stMetricValue"] {
+    color: #38bdf8 !important;
+    font-weight: 700;
+}
+
+/* Hero Cards */
+.ak-hero {
+    padding: 24px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    border: 1px solid #334155;
+    margin-bottom: 20px;
+}
+
+.ak-hero h2, .ak-hero h3 {
+    color: #ffffff !important;
+}
+
+.ak-muted {
+    color: #94a3b8 !important;
+    font-size: 0.95rem;
+}
+
+/* Text Inputs, Text Areas, Select Boxes - High visibility */
+div[data-baseweb="input"] > div, div[data-baseweb="select"] > div {
+    background-color: #1e293b !important;
+    color: #ffffff !important;
+    border-color: #475569 !important;
+}
+
+input {
+    color: #ffffff !important;
+}
+
+/* Primary Action Buttons */
+.stButton>button[kind="primary"], .stFormSubmitButton>button {
+    background: linear-gradient(90deg, #0284c7, #2563eb) !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    border: none !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Secondary Buttons */
+.stButton>button, .stDownloadButton>button {
+    background-color: #334155 !important;
+    color: #ffffff !important;
+    border: 1px solid #475569 !important;
+    border-radius: 10px;
+    font-weight: 600;
+}
+
+.stButton>button:hover {
+    background-color: #475569 !important;
+    border-color: #38bdf8 !important;
+}
+
+/* Dataframe header & table visibility */
+[data-testid="stDataFrame"] {
+    border: 1px solid #334155;
+    border-radius: 8px;
+}
+</style>""", unsafe_allow_html=True)
 
 elif page == "Data Explorer":
     st.subheader("Data Explorer")
