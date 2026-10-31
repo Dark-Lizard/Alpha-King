@@ -109,7 +109,7 @@ st.title("👑 Alpha King")
 
 # --- PAGES ---
 
-if page == "BRAIN Access":
+elif page == "BRAIN Access":
     st.subheader("🌐 WorldQuant BRAIN Authentication")
     st.markdown('<div class="ak-hero"><h3>Authenticate & Return to Workspace</h3><div class="ak-muted">Log in via API to receive your Persona link instantly.</div></div>', unsafe_allow_html=True)
     
@@ -135,7 +135,6 @@ if page == "BRAIN Access":
                         timeout=8, 
                         allow_redirects=False
                     )
-                
                 st.session_state["is_authenticating"] = False
                 
                 # Direct Successful Auth
@@ -145,6 +144,45 @@ if page == "BRAIN Access":
                     st.session_state["current_page"] = "Simulation Lab"
                     st.success("Authentication successful! Opening Simulation Lab...")
                     st.rerun()
+                
+                # Persona Verification Request
+                elif res.status_code == 401 or "persona" in res.headers.get("WWW-Authenticate", "").lower():
+                    inquiry_path = res.headers.get("Location")
+                    if inquiry_path:
+                        if inquiry_path.startswith("http"):
+                            st.session_state["persona_url"] = inquiry_path
+                        else:
+                            st.session_state["persona_url"] = f"https://api.worldquantbrain.com{inquiry_path}"
+                        st.warning("WorldQuant requested Persona identity verification.")
+                    else:
+                        st.error("Persona verification required, but no location header was returned.")
+                else:
+                    st.error(f"Authentication response ({res.status_code}): {res.text}")
+                    
+            except requests.exceptions.Timeout:
+                st.session_state["is_authenticating"] = False
+                st.error("Request timed out. WorldQuant server did not respond in time.")
+            except Exception as e:
+                st.session_state["is_authenticating"] = False
+                st.error(f"Connection error: {e}")
+
+    # Display Persona Link Immediately
+    if st.session_state.get("persona_url"):
+        st.divider()
+        st.subheader("⚠️ Identity Verification Link Received")
+        st.info("Click the button below to complete verification in Persona, then click confirm to complete login.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.link_button("↗️ Open Persona Verification Window", st.session_state["persona_url"], type="primary", use_container_width=True)
+        with col2:
+            if st.button("✓ I completed verification — return to app", use_container_width=True):
+                save("until", (datetime.now() + timedelta(hours=4)).isoformat())
+                save("login_mode", "persona_manual_confirm")
+                st.session_state.pop("persona_url", None)
+                st.session_state["current_page"] = "Simulation Lab"
+                st.success("Verification confirmed! Returning to Simulation Lab...")
+                st.rerun()
                 
                # Persona Verification Request
 elif res.status_code == 401 or "persona" in res.headers.get("WWW-Authenticate", "").lower():
