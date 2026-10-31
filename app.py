@@ -68,11 +68,17 @@ def save(k, v):
         c.execute("INSERT INTO settings VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k, str(v)))
 
 def remaining():
-    try:
-        n = max(0, int((datetime.fromisoformat(setting("until")) - datetime.now()).total_seconds()))
-        return f"{n//3600:02}:{n//60%60:02}:{n%60:02}"
-    except Exception:
-        return "Inactive"
+   try:
+                with st.spinner("Connecting to WorldQuant API..."):
+                    res = requests.post(
+                        f"{BRAIN_API}/authentication", 
+                        auth=(email, password), 
+                        headers=headers,
+                        json={"expiry": 14400}, 
+                        timeout=8, 
+                        allow_redirects=False
+                    )
+                st.session_state["is_authenticating"] = False
 
 # Navigation Setup
 pages = ["Simulation Lab", "Dashboard", "Data Explorer", "Tasks", "Portfolio", "Competitions", "Template Home", "AI Alpha Lab", "BRAIN Access"]
@@ -111,8 +117,102 @@ st.title("👑 Alpha King")
 
 if page == "BRAIN Access":
     st.subheader("🌐 WorldQuant BRAIN Authentication")
-    st.markdown('<div class="ak-hero"><h3>Authenticate & Return to Workspace</h3><div class="ak-muted">Log in via API to receive your Persona link instantly.</div></div>', unsafe_allow_html=True)
-    
+st.markdown("""
+<style>
+/* Main app background - Clean & bright main background */
+.stApp {
+    background-color: #0f172a;
+    color: #f8fafc;
+}
+
+/* Sidebar styling - Rich navy with clear borders */
+[data-testid="stSidebar"] {
+    background-color: #1e293b;
+    border-right: 1px solid #334155;
+}
+
+/* Sidebar text and subheaders visibility */
+[data-testid="stSidebar"] * {
+    color: #f1f5f9 !important;
+}
+
+/* Main title & Headers - Bright white */
+h1, h2, h3, h4, h5, h6, .stMarkdown label, p {
+    color: #f8fafc !important;
+}
+
+/* Metrics - Sharp contrast cards */
+[data-testid="stMetric"] {
+    background: #1e293b;
+    border: 1px solid #334155;
+    padding: 16px;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+}
+
+[data-testid="stMetricValue"] {
+    color: #38bdf8 !important;
+    font-weight: 700;
+}
+
+/* Hero Cards */
+.ak-hero {
+    padding: 24px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    border: 1px solid #334155;
+    margin-bottom: 20px;
+}
+
+.ak-hero h2, .ak-hero h3 {
+    color: #ffffff !important;
+}
+
+.ak-muted {
+    color: #94a3b8 !important;
+    font-size: 0.95rem;
+}
+
+/* Text Inputs, Text Areas, Select Boxes - High visibility */
+div[data-baseweb="input"] > div, div[data-baseweb="select"] > div {
+    background-color: #1e293b !important;
+    color: #ffffff !important;
+    border-color: #475569 !important;
+}
+
+input {
+    color: #ffffff !important;
+}
+
+/* Primary Action Buttons */
+.stButton>button[kind="primary"], .stFormSubmitButton>button {
+    background: linear-gradient(90deg, #0284c7, #2563eb) !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    border: none !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Secondary Buttons */
+.stButton>button, .stDownloadButton>button {
+    background-color: #334155 !important;
+    color: #ffffff !important;
+    border: 1px solid #475569 !important;
+    border-radius: 10px;
+    font-weight: 600;
+}
+
+.stButton>button:hover {
+    background-color: #475569 !important;
+    border-color: #38bdf8 !important;
+}
+
+/* Dataframe header & table visibility */
+[data-testid="stDataFrame"] {
+    border: 1px solid #334155;
+    border-radius: 8px;
+}
+</style>""", unsafe_allow_html=True)    
     email = st.text_input("WorldQuant Email", value="mangerajoseph24@gmail.com")
     password = st.text_input("WorldQuant Password", type="password")
     
