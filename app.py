@@ -330,10 +330,9 @@ elif page == "Alpha Simulation Lab":
 
     expr = st.text_area("Alpha Factor Expression", value="rank(ts_rank(close, 20))", height=100)
     
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     region = c1.selectbox("Region", list(REGION_CONFIG.keys()))
     
-    # Dynamic Delay options based on Region config
     allowed_delays = REGION_CONFIG[region]["delays"]
     delay_options = [f"D{d}" for d in allowed_delays]
     delay_selection = c2.selectbox("Delay", delay_options)
@@ -341,6 +340,7 @@ elif page == "Alpha Simulation Lab":
 
     universe = c3.selectbox("Universe", REGION_CONFIG[region]["universes"])
     decay = c4.number_input("Decay", value=4, min_value=0, max_value=30)
+    truncation = c5.number_input("Truncation", value=0.08, min_value=0.00, max_value=2.00, step=0.01)
 
     # Advanced Simulation Settings Drawer
     with st.expander("⚙️ Advanced Simulation Settings"):
@@ -349,14 +349,13 @@ elif page == "Alpha Simulation Lab":
         instrument_type = sc2.selectbox("Instrument Type", ["EQUITY"])
         unit_handling = sc3.selectbox("Unit Handling", ["VERIFY", "OFF"])
 
-        sc4, sc5, sc6 = st.columns(3)
-        truncation = sc4.number_input("Truncation", value=0.08, step=0.01)
-        nan_handling = sc5.selectbox("Nan Handling", ["OFF", "ON"])
-        pasteurization = sc6.selectbox("Pasteurization", ["ON", "OFF"])
+        sc4, sc5 = st.columns(2)
+        nan_handling = sc4.selectbox("Nan Handling", ["OFF", "ON"])
+        pasteurization = sc5.selectbox("Pasteurization", ["ON", "OFF"])
 
-        sc7, sc8 = st.columns(2)
-        max_positions = sc7.selectbox("Maximum Positions", ["OFF", "ON"])
-        test_period_years = sc8.slider("Test Period (Years)", 1, 10, 6)
+        sc6, sc7 = st.columns(2)
+        max_positions = sc6.selectbox("Maximum Positions", ["OFF", "ON"])
+        test_period_years = sc7.slider("Test Period (Years)", 1, 10, 6)
 
     # Simulation Trigger
     if st.button("▶ Run Simulation", type="primary", use_container_width=True):
@@ -420,31 +419,4 @@ elif page == "AI Alpha Generator":
                         st.code(response.text)
                     else:
                         st.info("API key validated. Standardized candidate generated:")
-                        st.code("group_rank(close / ts_mean(close, 20), subindustry)")
-                except Exception as e:
-                    st.error(f"AI Generation Error: {e}")
-
-# --- 4. PORTFOLIO & SUBMISSIONS ---
-elif page == "Portfolio & Submissions":
-    st.subheader("📊 Tracked Platform Alphas")
-    with db() as c:
-        df_alphas = pd.read_sql_query("SELECT * FROM alphas ORDER BY id DESC", c)
-    if len(df_alphas):
-        st.dataframe(df_alphas, use_container_width=True, hide_index=True)
-    else:
-        st.info("No submitted alphas found. Run simulations under 'Alpha Simulation Lab'.")
-
-# --- 5. API KEY SETTINGS ---
-elif page == "API Key Settings":
-    st.subheader("🔑 LLM API Key Management")
-    st.caption("Configure free and premium API keys for quantitative factor research.")
-
-    gemini_key = st.text_input("Google Gemini API Key", value=setting("key_google"), type="password")
-    openai_key = st.text_input("OpenAI API Key", value=setting("key_openai"), type="password")
-    anthropic_key = st.text_input("Anthropic Claude API Key", value=setting("key_anthropic"), type="password")
-
-    if st.button("💾 Save API Keys", type="primary"):
-        save("key_google", gemini_key)
-        save("key_openai", openai_key)
-        save("key_anthropic", anthropic_key)
-        st.success("API keys saved securely to local workspace storage.")
+                        st.code("group_rank(close / ts_mean(close, 20),
