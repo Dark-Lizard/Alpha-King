@@ -28,7 +28,7 @@ div[data-testid="stForm"],div[data-testid="stExpander"]{border:1px solid #263d59
 .ak-muted{color:#9fb3c8;font-size:.9rem}
 </style>""", unsafe_allow_html=True)
 
-# Pause autorefresh during auth request to avoid killing fast HTTP connections
+# Pause autorefresh during auth request
 if not st.session_state.get("is_authenticating", False):
     try:
         from streamlit_autorefresh import st_autorefresh
@@ -74,7 +74,7 @@ def remaining():
     except Exception:
         return "Inactive"
 
-# Navigation
+# Navigation Setup
 pages = ["Simulation Lab", "Dashboard", "Data Explorer", "Tasks", "Portfolio", "Competitions", "Template Home", "AI Alpha Lab", "BRAIN Access"]
 icons = {"Dashboard": "🏠", "Data Explorer": "🧭", "Simulation Lab": "⚗️", "Tasks": "📋", "Portfolio": "📈", "Competitions": "🏆", "Template Home": "🧩", "AI Alpha Lab": "✨", "BRAIN Access": "🌐"}
 
@@ -107,9 +107,9 @@ if st.sidebar.button("↪ Sign out of Alpha King", use_container_width=True):
 
 st.title("👑 Alpha King")
 
-# --- PAGES ---
+# --- PAGE ROUTING ---
 
-elif page == "BRAIN Access":
+if page == "BRAIN Access":
     st.subheader("🌐 WorldQuant BRAIN Authentication")
     st.markdown('<div class="ak-hero"><h3>Authenticate & Return to Workspace</h3><div class="ak-muted">Log in via API to receive your Persona link instantly.</div></div>', unsafe_allow_html=True)
     
@@ -166,37 +166,7 @@ elif page == "BRAIN Access":
                 st.session_state["is_authenticating"] = False
                 st.error(f"Connection error: {e}")
 
-    # Display Persona Link Immediately
-    if st.session_state.get("persona_url"):
-        st.divider()
-        st.subheader("⚠️ Identity Verification Link Received")
-        st.info("Click the button below to complete verification in Persona, then click confirm to complete login.")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.link_button("↗️ Open Persona Verification Window", st.session_state["persona_url"], type="primary", use_container_width=True)
-        with col2:
-            if st.button("✓ I completed verification — return to app", use_container_width=True):
-                save("until", (datetime.now() + timedelta(hours=4)).isoformat())
-                save("login_mode", "persona_manual_confirm")
-                st.session_state.pop("persona_url", None)
-                st.session_state["current_page"] = "Simulation Lab"
-                st.success("Verification confirmed! Returning to Simulation Lab...")
-                st.rerun()
-                
-               # Persona Verification Request
-elif res.status_code == 401 or "persona" in res.headers.get("WWW-Authenticate", "").lower():
-    inquiry_path = res.headers.get("Location")
-    if inquiry_path:
-        # Build the absolute URL pointing directly to WorldQuant/Persona
-        if inquiry_path.startswith("http"):
-            st.session_state["persona_url"] = inquiry_path
-        else:
-            st.session_state["persona_url"] = f"https://api.worldquantbrain.com{inquiry_path}"
-        st.warning("WorldQuant requested Persona identity verification.")
-    else:
-        st.error("Persona verification required, but no location header was returned.")
-    # Display Persona Link Immediately
+    # Display Persona Link
     if st.session_state.get("persona_url"):
         st.divider()
         st.subheader("⚠️ Identity Verification Link Received")
