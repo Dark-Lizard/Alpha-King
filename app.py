@@ -146,24 +146,18 @@ if page == "BRAIN Access":
                     st.success("Authentication successful! Opening Simulation Lab...")
                     st.rerun()
                 
-                # Persona Verification Request
-                elif res.status_code == 401 or "persona" in res.headers.get("WWW-Authenticate", "").lower():
-                    inquiry_url = res.headers.get("Location")
-                    if inquiry_url:
-                        st.session_state["persona_url"] = inquiry_url
-                        st.warning("WorldQuant requested Persona identity verification.")
-                    else:
-                        st.error("Persona verification required, but no location header was returned.")
-                else:
-                    st.error(f"Authentication response ({res.status_code}): {res.text}")
-                    
-            except requests.exceptions.Timeout:
-                st.session_state["is_authenticating"] = False
-                st.error("Request timed out. WorldQuant server did not respond in time.")
-            except Exception as e:
-                st.session_state["is_authenticating"] = False
-                st.error(f"Connection error: {e}")
-
+               # Persona Verification Request
+elif res.status_code == 401 or "persona" in res.headers.get("WWW-Authenticate", "").lower():
+    inquiry_path = res.headers.get("Location")
+    if inquiry_path:
+        # Build the absolute URL pointing directly to WorldQuant/Persona
+        if inquiry_path.startswith("http"):
+            st.session_state["persona_url"] = inquiry_path
+        else:
+            st.session_state["persona_url"] = f"https://api.worldquantbrain.com{inquiry_path}"
+        st.warning("WorldQuant requested Persona identity verification.")
+    else:
+        st.error("Persona verification required, but no location header was returned.")
     # Display Persona Link Immediately
     if st.session_state.get("persona_url"):
         st.divider()
