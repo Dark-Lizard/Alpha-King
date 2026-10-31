@@ -28,11 +28,13 @@ div[data-testid="stForm"],div[data-testid="stExpander"]{border:1px solid #263d59
 .ak-muted{color:#9fb3c8;font-size:.9rem}
 </style>""", unsafe_allow_html=True)
 
-try:
-    from streamlit_autorefresh import st_autorefresh
-    st_autorefresh(interval=1000, key="clock")
-except:
-    pass
+# Pause autorefresh during auth request to avoid killing fast HTTP connections
+if not st.session_state.get("is_authenticating", False):
+    try:
+        from streamlit_autorefresh import st_autorefresh
+        st_autorefresh(interval=5000, key="clock")
+    except Exception:
+        pass
 
 def db():
     c = sqlite3.connect(DB, check_same_thread=False)
@@ -69,10 +71,10 @@ def remaining():
     try:
         n = max(0, int((datetime.fromisoformat(setting("until")) - datetime.now()).total_seconds()))
         return f"{n//3600:02}:{n//60%60:02}:{n%60:02}"
-    except:
+    except Exception:
         return "Inactive"
 
-# --- Navigation Setup ---
+# Navigation
 pages = ["Simulation Lab", "Dashboard", "Data Explorer", "Tasks", "Portfolio", "Competitions", "Template Home", "AI Alpha Lab", "BRAIN Access"]
 icons = {"Dashboard": "🏠", "Data Explorer": "🧭", "Simulation Lab": "⚗️", "Tasks": "📋", "Portfolio": "📈", "Competitions": "🏆", "Template Home": "🧩", "AI Alpha Lab": "✨", "BRAIN Access": "🌐"}
 
@@ -107,7 +109,80 @@ st.title("👑 Alpha King")
 
 # --- PAGES ---
 
-if page == "Simulation Lab":
+if page == "BRAIN Access":
+    st.subheader("🌐 WorldQuant BRAIN Authentication")
+    st.markdown('<div class="ak-hero"><h3>Authenticate & Return to Workspace</h3><div class="ak-muted">Log in via API to receive your Persona link instantly.</div></div>', unsafe_allow_html=True)
+    
+    email = st.text_input("WorldQuant Email", value="mangerajoseph24@gmail.com")
+    password = st.text_input("WorldQuant Password", type="password")
+    
+    if st.button("🔑 Authenticate with WorldQuant BRAIN", type="primary"):
+        if not email or not password:
+            st.warning("Please provide both email and password.")
+        else:
+            st.session_state["is_authenticating"] = True
+            headers = {
+                "Accept": "application/json;version=2.0",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            }
+            try:
+                with st.spinner("Connecting to WorldQuant API..."):
+                    res = requests.post(
+                        f"{BRAIN_API}/authentication", 
+                        auth=(email, password), 
+                        headers=headers,
+                        json={"expiry": 14400}, 
+                        timeout=8, 
+                        allow_redirects=False
+                    )
+                
+                st.session_state["is_authenticating"] = False
+                
+                # Direct Successful Auth
+                if res.status_code in (200, 201, 204):
+                    save("until", (datetime.now() + timedelta(hours=4)).isoformat())
+                    save("login_mode", "direct_api")
+                    st.session_state["current_page"] = "Simulation Lab"
+                    st.success("Authentication successful! Opening Simulation Lab...")
+                    st.rerun()
+                
+                # Persona Verification Request
+                elif res.status_code == 401 or "persona" in res.headers.get("WWW-Authenticate", "").lower():
+                    inquiry_url = res.headers.get("Location")
+                    if inquiry_url:
+                        st.session_state["persona_url"] = inquiry_url
+                        st.warning("WorldQuant requested Persona identity verification.")
+                    else:
+                        st.error("Persona verification required, but no location header was returned.")
+                else:
+                    st.error(f"Authentication response ({res.status_code}): {res.text}")
+                    
+            except requests.exceptions.Timeout:
+                st.session_state["is_authenticating"] = False
+                st.error("Request timed out. WorldQuant server did not respond in time.")
+            except Exception as e:
+                st.session_state["is_authenticating"] = False
+                st.error(f"Connection error: {e}")
+
+    # Display Persona Link Immediately
+    if st.session_state.get("persona_url"):
+        st.divider()
+        st.subheader("⚠️ Identity Verification Link Received")
+        st.info("Click the button below to complete verification in Persona, then click confirm to complete login.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.link_button("↗️ Open Persona Verification Window", st.session_state["persona_url"], type="primary", use_container_width=True)
+        with col2:
+            if st.button("✓ I completed verification — return to app", use_container_width=True):
+                save("until", (datetime.now() + timedelta(hours=4)).isoformat())
+                save("login_mode", "persona_manual_confirm")
+                st.session_state.pop("persona_url", None)
+                st.session_state["current_page"] = "Simulation Lab"
+                st.success("Verification confirmed! Returning to Simulation Lab...")
+                st.rerun()
+
+elif page == "Simulation Lab":
     st.subheader("⚗️ Local Alpha Simulation Lab")
     st.info("Runs reproducible cross-sectional backtests locally on uploaded market data.")
     up = st.file_uploader("Upload CSV: date, symbol, close, plus optional numeric factor columns", type="csv", key="local_market_data")
@@ -151,25 +226,6 @@ if page == "Simulation Lab":
                         st.error(f"Simulation failed: {e}")
         except Exception as e:
             st.error(f"Could not read dataset: {e}")
-            
-    res = st.session_state.get("local_sim_result")
-    if res:
-        st.divider()
-        st.subheader("📊 Results")
-        m = res["metrics"]
-        cols = st.columns(5)
-        for col, (label, key, fmt) in zip(cols, [("Sharpe", "Sharpe", "{:.2f}"), ("Annual return", "Annual Return", "{:.1%}"), ("Max drawdown", "Max Drawdown", "{:.1%}"), ("Turnover", "Turnover", "{:.1%}"), ("Fitness", "Fitness", "{:.2f}")]):
-            col.metric(label, fmt.format(m[key]))
-        
-        import plotly.express as px
-        fig = px.line(res["equity_curve"], x="date", y="equity", title="Cumulative portfolio growth")
-        fig.update_traces(line=dict(color="black", width=2))
-        fig.update_layout(template="plotly_white", font=dict(color="black"), yaxis_title="Growth of 1.0")
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(pd.DataFrame(res["split_metrics"]), use_container_width=True, hide_index=True)
-        st.download_button("⬇ Export daily returns and positions", res["export_csv"], "alpha_king_local_backtest.csv", "text/csv")
-    else:
-        st.caption("Upload a daily panel with multiple symbols to start simulation.")
 
 elif page == "Dashboard":
     st.markdown('<div class="ak-hero"><h2>Research smarter. Test rigorously. Build better alphas.</h2><div class="ak-muted">Factor discovery and local backtesting workspace.</div></div>', unsafe_allow_html=True)
@@ -186,48 +242,6 @@ elif page == "Dashboard":
     st.progress(min(used / 5000, 1))
     st.dataframe(a.tail(10), use_container_width=True, hide_index=True) if len(a) else st.info("No alpha records yet.")
 
-elif page == "BRAIN Access":
-    st.subheader("🌐 WorldQuant BRAIN Authentication")
-    st.markdown('<div class="ak-hero"><h3>Authenticate & Return to Workspace</h3><div class="ak-muted">Log in via API or browser verification link.</div></div>', unsafe_allow_html=True)
-    
-    email = st.text_input("WorldQuant Email")
-    password = st.text_input("WorldQuant Password", type="password")
-    
-    if st.button("🔑 Authenticate with WorldQuant BRAIN", type="primary"):
-        if not email or not password:
-            st.warning("Please provide both email and password.")
-        else:
-            try:
-                res = requests.post(f"{BRAIN_API}/authentication", auth=(email, password), json={"expiry": 14400}, timeout=15, allow_redirects=False)
-                if res.status_code in (200, 201, 204):
-                    save("until", (datetime.now() + timedelta(hours=4)).isoformat())
-                    save("login_mode", "direct_api")
-                    st.session_state["current_page"] = "Simulation Lab"
-                    st.success("Authentication successful! Redirecting to Simulation Lab...")
-                    st.rerun()
-                elif res.status_code == 401 and "persona" in res.headers.get("WWW-Authenticate", "").lower():
-                    inquiry_url = res.headers.get("Location")
-                    st.session_state["persona_url"] = inquiry_url
-                    st.warning("WorldQuant requested Persona identity verification.")
-                else:
-                    st.error(f"Authentication failed: {res.status_code} - {res.text}")
-            except Exception as e:
-                st.error(f"Connection error: {e}")
-
-    if st.session_state.get("persona_url"):
-        st.divider()
-        st.subheader("⚠️ Identity Verification Required")
-        st.write("Complete verification in the window below, then click confirm to complete login:")
-        st.link_button("↗️ Open Persona Verification Link", st.session_state["persona_url"])
-        
-        if st.button("✓ I completed verification — return to app", use_container_width=True, type="primary"):
-            save("until", (datetime.now() + timedelta(hours=4)).isoformat())
-            save("login_mode", "persona_manual_confirm")
-            st.session_state.pop("persona_url", None)
-            st.session_state["current_page"] = "Simulation Lab"
-            st.success("Verification confirmed! Returning to Simulation Lab...")
-            st.rerun()
-
 elif page == "Data Explorer":
     st.subheader("Data Explorer")
     up = st.file_uploader("Import authorized data-field CSV", type="csv")
@@ -241,11 +255,6 @@ elif page == "Data Explorer":
                     c.execute("INSERT INTO fields VALUES(?,?,?)", (str(r[f]), str(r.get("dataset", "")), str(r.get("description", ""))))
             st.success("Imported fields.")
             st.rerun()
-    f = read("SELECT * FROM fields ORDER BY dataset,field")
-    if len(f):
-        ds = st.selectbox("Dataset", ["All"] + sorted(f.dataset.fillna("").unique().tolist()))
-        v = f if ds == "All" else f[f.dataset == ds]
-        st.dataframe(v, use_container_width=True, hide_index=True)
 
 elif page == "AI Alpha Lab":
     st.subheader("AI Alpha Lab")
