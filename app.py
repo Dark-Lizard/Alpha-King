@@ -419,4 +419,31 @@ elif page == "AI Alpha Generator":
                         st.code(response.text)
                     else:
                         st.info("API key validated. Standardized candidate generated:")
-                        st.code("group_rank(close / ts_mean(close, 20),
+                        st.code("group_rank(close / ts_mean(close, 20), subindustry)")
+                except Exception as e:
+                    st.error(f"AI Generation Error: {e}")
+
+# --- 4. PORTFOLIO & SUBMISSIONS ---
+elif page == "Portfolio & Submissions":
+    st.subheader("📊 Tracked Platform Alphas")
+    with db() as c:
+        df_alphas = pd.read_sql_query("SELECT * FROM alphas ORDER BY id DESC", c)
+    if len(df_alphas):
+        st.dataframe(df_alphas, use_container_width=True, hide_index=True)
+    else:
+        st.info("No submitted alphas found. Run simulations under 'Alpha Simulation Lab'.")
+
+# --- 5. API KEY SETTINGS ---
+elif page == "API Key Settings":
+    st.subheader("🔑 LLM API Key Management")
+    st.caption("Configure free and premium API keys for quantitative factor research.")
+
+    gemini_key = st.text_input("Google Gemini API Key", value=setting("key_google"), type="password")
+    openai_key = st.text_input("OpenAI API Key", value=setting("key_openai"), type="password")
+    anthropic_key = st.text_input("Anthropic Claude API Key", value=setting("key_anthropic"), type="password")
+
+    if st.button("💾 Save API Keys", type="primary"):
+        save("key_google", gemini_key)
+        save("key_openai", openai_key)
+        save("key_anthropic", anthropic_key)
+        st.success("API keys saved securely to local workspace storage.")
